@@ -95,11 +95,11 @@ def valid_step(args, model, loader, dataset, epoch):
     pbar = tqdm(enumerate(loader), total= len(loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
     with torch.no_grad():
         for idx, (batch) in pbar:
-            mri, loc = batch[0].to(args.device), batch[1]
+            mri, loc, patient_id = batch[0].to(args.device), batch[1], batch[2][0]
 
             pred = model(mri);      
             pred = torch.sigmoid(pred)>0.5;
-            dataset.update_prediction(pred, loc);
+            dataset.update_prediction(pred, patient_id,loc);
     
     epoch_dice = dataset.calculate_metrics();
     print(('\n' + '%10i' + '%10f') %(epoch, epoch_dice));

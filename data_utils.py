@@ -403,10 +403,11 @@ class MICCAI_Dataset(Dataset):
                 else:
                     center=[mri.shape[1]//2, mri.shape[2]//2, mri.shape[3]//2]
                 visualize_2d([mri, mask, gt], center);
-            self.patient_id = patient_id;
-            return mri, loc;
+            
+            return mri, loc, patient_id;
     def update_prediction(self, 
-                          pred,  
+                          pred,
+                          patient_id,  
                           loc):
         """saves the prediction into the predefined tensor.
             location is set through 'loc' parameter
@@ -424,7 +425,7 @@ class MICCAI_Dataset(Dataset):
             location of this predicted patch in the list of all patches for one particular example.
 
         """
-        self.pred_data[self.patient_id][(loc[0].item())*self.step_w:(loc[0].item())*self.step_w + self.args.crop_size_w, 
+        self.pred_data[patient_id][(loc[0].item())*self.step_w:(loc[0].item())*self.step_w + self.args.crop_size_w, 
                                 (loc[1].item())*self.step_h:((loc[1].item()))*self.step_h + self.args.crop_size_h, 
                                 (loc[2].item())*self.step_d:((loc[2].item()))*self.step_d + self.args.crop_size_d] = np.array(pred.squeeze().detach().cpu().numpy()).astype("int32");
 
