@@ -154,6 +154,8 @@ def cropper(mri,
         end_z = center[2]+int(d_z_r)+offset_z;
 
         d = dict();
+        temp = mri[:, start_x:end_x, start_y:end_y, start_z:end_z];
+        assert temp.shape[1] == 96 and temp.shape[2] == 96 and temp.shape[3] == 96
         d['mri'] = torch.from_numpy(mri[:, start_x:end_x, start_y:end_y, start_z:end_z]);
         d['mask'] = torch.from_numpy(mask[:, start_x:end_x, start_y:end_y, start_z:end_z]);
         d['gt'] = torch.from_numpy(gt[:, start_x:end_x, start_y:end_y, start_z:end_z]);
@@ -161,167 +163,6 @@ def cropper(mri,
         ret.append(d);
 
     return ret;
-
-class MICCAI_PRETRAIN_Dataset(Dataset):
-    """Dataset for self-supervised pretraining
-
-    it returns examples for training which includes to MRI patch and one ground truth labels
-
-    Parameters
-    ----------
-    args : dict
-        arguments
-
-    mr_images : list
-        list of mri images, should a string list
-
-    train : bool
-        indicate if we are in training or testing mode
-
-    cache: bool
-        inidicate if we are only caching dataset or we are using it for training
-
-    Attributes
-    ----------
-    mr_imges : list
-        list of loaded mri scans
-
-    """
-    def __init__(self, 
-                 args, 
-                 mr_images, 
-                 train = True,
-                 cache = False) -> None:
-        super().__init__();
-
-        self.args = args;
-        m1 = 0.7;
-        m2 = 0.8;
-        self.augment_noisy_image = OneOf([
-            RandGaussianSmooth(prob=1.0, sigma_x=(m1,m2), sigma_y=(m1,m2), sigma_z=(m1,m2)),
-            RandGaussianNoise(prob=1.0,std=0.05),
-            RandGibbsNoise(prob=1.0, alpha=(0.65,0.75))
-        ], weights=[1,1,1])
-
-
-        self.transforms = NormalizeIntensity(subtrahend=0.5, divisor=0.5);
-        self.crop = RandCropByPosNegLabeld(
-            keys=['image', 'gradient', 'thresh', 'mask'], 
-            label_key='mask', 
-            spatial_size= (args.crop_size_w, args.crop_size_h, args.crop_size_d),
-            pos=1, 
-            neg=0,
-            num_samples=1 if cache else args.sample_per_mri if train else 1);
-        self.resize = Resize(spatial_size=[args.crop_size_w, args.crop_size_h, args.crop_size_d]);
-
-        self.train = train;
-        self.cache = cache;
-
-        self.mr_images = [];
-
-        if train or cache:
-            for patient_path in mr_images:
-
-                mri = nib.load(patient_path);
-                gradient_file_path = patient_path[:patient_path.find('.')];
-                mri = mri.get_fdata();
-                mri = window_center_adjustment(mri);
-
-                gradient = pickle.load(open(f'{gradient_file_path}.gradient', 'rb'));
-                self.mr_images.append([mri, gradient])
-
-        else:
-            for mr in mr_images:
-                mrimage = pickle.load(open(mr, 'rb'))
-                self.mr_images.append(mrimage);
-    
-    def __len__(self):
-        return len(self.mr_images);
-
-    def __getitem__(self, index):
-        if self.train:
-            mrimage, gr = self.mr_images[index];
-            mask = mrimage > threshold_otsu(mrimage);            
-            mask = np.expand_dims(mask, axis=0);
-            mrimage = np.expand_dims(mrimage, axis=0);
-            mrimage = mrimage / (np.max(mrimage)+1e-4);
-
-            g = (mrimage > 0.9);
-            g = torch.from_numpy(g);
-            ret_mrimage = None;
-            ret_mrimage_noisy = None;
-            ret_total_heatmap = None;
-
-            if self.args.deterministic is False:
-                ret_transforms = self.crop({'image': mrimage,'gradient': g, 'thresh': mask, 'mask': g});
-            
-            for i in range(self.args.sample_per_mri if self.cache is False else 1):
-                if self.args.deterministic is False:
-                    mrimage_c = ret_transforms[i]['image'];
-                    g_c = ret_transforms[i]['gradient'];
-                    mask_c = ret_transforms[i]['thresh'];
-                    mrimage_noisy = copy(mrimage_c);
-                else:
-                    mrimage_c = mrimage[:, int(mrimage.shape[1]/2-48):int(mrimage.shape[1]/2+48), int(mrimage.shape[2]/2-48):int(mrimage.shape[2]/2+48), int(mrimage.shape[3]/2-48):int(mrimage.shape[3]/2+48)];
-                    g_c = g[:, int(mrimage.shape[1]/2-48):int(mrimage.shape[1]/2+48), int(mrimage.shape[2]/2-48):int(mrimage.shape[2]/2+48), int(mrimage.shape[3]/2-48):int(mrimage.shape[3]/2+48)];
-                    mask_c = mask[:, int(mrimage.shape[1]/2-48):int(mrimage.shape[1]/2+48), int(mrimage.shape[2]/2-48):int(mrimage.shape[2]/2+48), int(mrimage.shape[3]/2-48):int(mrimage.shape[3]/2+48)];
-                    mrimage_noisy = copy(mrimage_c);
-                    mrimage_c = torch.from_numpy(mrimage_c);
-                    mrimage_noisy = torch.from_numpy(mrimage_noisy);
-                    mask_c = torch.from_numpy(mask_c);
-                
-                num_corrupted_patches = np.random.randint(1,5) if self.args.deterministic is False else 20;
-
-                mrimage_noisy, heatmap, noise, center = inpaint_3d(mrimage_noisy, g_c, num_corrupted_patches, self.args.deterministic)
-
-                
-                #total_heatmap = total_heatmap * mask_c;
-                #mrimage_noisy = mrimage_noisy * mask_c;
-                #mrimage_c = mrimage_c * mask_c;
-
-                total_heatmap_thresh = torch.where(heatmap > 0, 1.0, 0.0);
-                part_first = mrimage_c * total_heatmap_thresh;
-                part_second = mrimage_noisy * total_heatmap_thresh;
-                # if self.args.deterministic is True:
-                #     mrimage_noisy = GibbsNoise(alpha = 0.65)(mrimage_noisy);
-                # else:
-                #     mrimage_noisy = self.augment_noisy_image(mrimage_noisy);
-
-                diff = torch.abs(part_first - part_second) > (0.2);
-
-                total_heatmap_thresh = torch.where(diff > 0, 0, 1);
-                
-                if self.args.debug_train_data:
-                    visualize_2d([mrimage_c, mrimage_noisy, total_heatmap_thresh], center);
-                
-                mrimage_c = self.transforms(mrimage_c)[0];
-                mrimage_noisy = self.transforms(mrimage_noisy)[0];
-
-                if ret_mrimage is None:
-                    ret_mrimage = mrimage_c.unsqueeze(dim=0);
-                    ret_mrimage_noisy = mrimage_noisy.unsqueeze(dim=0);
-
-                    ret_total_heatmap = total_heatmap_thresh.unsqueeze(dim=0);
-                else:
-                    ret_mrimage = torch.concat([ret_mrimage, mrimage_c.unsqueeze(dim=0)], dim=0);
-                    ret_mrimage_noisy = torch.concat([ret_mrimage_noisy, mrimage_noisy.unsqueeze(dim=0)], dim=0);
-
-                    ret_total_heatmap = torch.concat([ret_total_heatmap, total_heatmap_thresh.unsqueeze(dim=0)], dim=0);
-            
-            with torch.no_grad():
-                c = torch.nn.Conv3d(1, 1, 16, 16, bias = False);
-                c.requires_grad_ = False;
-                c.weight.data = torch.ones_like(c.weight.data);
-                patched = c((1-ret_total_heatmap).float());
-                patched = torch.where(patched > 1024, 1, 0);
-            # print(patched.shape);
-            # print(patched);
-
-                
-            return ret_mrimage, ret_mrimage_noisy, ret_total_heatmap, patched;
-        else:
-            ret = self.mr_images[index];
-            return ret;
 
 class MICCAI_Dataset(Dataset):
     """Dataset for self-supervised pretraining
@@ -370,8 +211,8 @@ class MICCAI_Dataset(Dataset):
         self.crop_rand = Compose(
             [ 
                 RandCropByPosNegLabeld(
-                keys=['image1', 'image2', 'mask', 'lbl', 'gradient'], 
-                label_key='image1', 
+                keys=['mri', 'mask', 'gt'], 
+                label_key='gt', 
                 spatial_size= (args.crop_size_w, args.crop_size_h, args.crop_size_d),
                 pos=1, 
                 neg=0,
@@ -473,14 +314,14 @@ class MICCAI_Dataset(Dataset):
             mri = mri / (np.max(mri)+1e-4);            
 
             if self.args.deterministic is False:
-                if np.sum(gt) != 0:
-                    ret_transforms = cropper(mri,
-                                             mask, 
-                                             gt,
-                                             roi_size=(self.args.crop_size_w, self.args.crop_size_h, self.args.crop_size_d),
-                                             num_samples=self.args.sample_per_mri if self.train else 1);
-                else:
-                    ret_transforms = self.crop_rand({'mri': mri, 'mask': mask,'gt': gt});
+                # if np.sum(gt) != 0:
+                #     ret_transforms = cropper(mri,
+                #                              mask, 
+                #                              gt,
+                #                              roi_size=(self.args.crop_size_w, self.args.crop_size_h, self.args.crop_size_d),
+                #                              num_samples=self.args.sample_per_mri if self.train else 1);
+                # else:
+                ret_transforms = self.crop_rand({'mri': mri, 'mask': mask,'gt': gt});
             
             ret_mri = None;
             ret_gt = None;
@@ -531,7 +372,7 @@ class MICCAI_Dataset(Dataset):
                 
                 mri_c = self.transforms(mri_c);
 
-
+                assert mri_c.shape[1] == 96 and mri_c.shape[2] == 96 and mri_c.shape[3] == 96
 
                 if ret_mri is None:
                     ret_mri = mri_c.unsqueeze(dim=0);
@@ -634,7 +475,7 @@ def get_loader_miccai16(args):
     train_mri, test_mri = pickle.load(open(os.path.join('cache_miccai-2016', f'train_test_split.dmp'), 'rb'));
 
 
-    mri_dataset_train = MICCAI_Dataset(args, train_mri if args.use_one_sample_only is False else train_mri[:1], train=True);
+    mri_dataset_train = MICCAI_Dataset(args, train_mri if args.use_one_sample_only is False else train_mri, train=True);
     train_loader = DataLoader(mri_dataset_train, 1, True, num_workers=args.num_workers, pin_memory=True);
     mri_dataset_test = MICCAI_Dataset(args, test_mri if args.use_one_sample_only is False else test_mri[:1], train=False);
     test_loader = DataLoader(mri_dataset_test, 1, False, num_workers=args.num_workers, pin_memory=True);

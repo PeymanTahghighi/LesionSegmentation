@@ -50,27 +50,27 @@ def train_step(epoch, model, loader, optimizer, scaler, args):
             curr_mri = mri[s*args.batch_size:(s+1)*args.batch_size]
             curr_mask = mask[s*args.batch_size:(s+1)*args.batch_size]
             curr_dt = dt[s*args.batch_size:(s+1)*args.batch_size]
-            with torch.cuda.amp.autocast_mode.autocast():
-                pred = model(curr_mri);
-                dl = DiceLoss(sigmoid=True)(pred, curr_mask);
-                bl = BounraryLoss(sigmoid=True)(pred, curr_dt)*args.bl_multiplier;
-                loss = dl + bl;
+            # with torch.cuda.amp.autocast_mode.autocast():
+            #     pred = model(curr_mri);
+            #     dl = DiceLoss(sigmoid=True)(pred, curr_mask);
+            #     bl = BounraryLoss(sigmoid=True)(pred, curr_dt)*args.bl_multiplier;
+            #     loss = dl + bl;
 
-            scaler.scale(loss).backward();
-            curr_loss = loss.item();
-            curr_step+=1;
-            curr_iou += (1-(DiceLoss(sigmoid=True)(pred, curr_mask)).item());
+            # scaler.scale(loss).backward();
+            # curr_loss = loss.item();
+            # curr_step+=1;
+            # curr_iou += (1-(DiceLoss(sigmoid=True)(pred, curr_mask)).item());
 
-            if (curr_step) % args.virtual_batch_size == 0:
-                scaler.step(optimizer);
-                scaler.update();
+            # if (curr_step) % args.virtual_batch_size == 0:
+            #     scaler.step(optimizer);
+            #     scaler.update();
                 
-                model.zero_grad(set_to_none = True);
-                epoch_loss.append(curr_loss);
-                epoch_IoU.append(curr_iou);
-                curr_loss = 0;
-                curr_step = 0;
-                curr_iou = 0;
+            #     model.zero_grad(set_to_none = True);
+            #     epoch_loss.append(curr_loss);
+            #     epoch_IoU.append(curr_iou);
+            #     curr_loss = 0;
+            #     curr_step = 0;
+            #     curr_iou = 0;
 
             pbar.set_description(('%10s' + '%10.4g'*2)%(epoch, np.mean(epoch_loss), np.mean(epoch_IoU)));
 
@@ -117,23 +117,18 @@ if __name__ == "__main__":
     parser.add_argument('--num-workers', default=0, type=int, help='num workers for data loader, should be equal to number of CPU cores');
     parser.add_argument('--use-one-sample-only', default=True, action='store_true');
     parser.add_argument('--device', default='cuda', type=str, help='device to run models on');
-    parser.add_argument('--debug-train-data', default=False, action='store_true', help='debug training data for debugging purposes');
+    parser.add_argument('--debug-train-data', default=True, action='store_true', help='debug training data for debugging purposes');
     parser.add_argument('--deterministic', default=False, action='store_true', help='if we want to have same augmentation and same datae, for sanity check');
     parser.add_argument('--bl-multiplier', default=10, type=int, help='boundary loss coefficient');
     parser.add_argument('--epoch', default=500, type=int);
     parser.add_argument('--virtual-batch-size', default=1, type=int, help='use it if batch size does not fit GPU memory');
     parser.add_argument('--network', default='VNet', type=str, help='which model to use');
 
-
-
     args = parser.parse_args();
 
     #run only once to cache location of train and test mri
     cache_dataset_miccai16(args);
     
-
-    
-
     train_loader, test_loader, test_dataset = get_loader_miccai16(args);
 
     if args.network == 'VNet':
@@ -149,28 +144,28 @@ if __name__ == "__main__":
     for e in range(args.epoch):
         model.train();
         train_loss = train_step(e, model, train_loader, optimizer, scale, args);
-        model.eval();
-        valid_dice = valid_step(args, model, test_loader, test_dataset, e);
+        # model.eval();
+        # valid_dice = valid_step(args, model, test_loader, test_dataset, e);
 
-        summary_writer.add_scalar('train/loss', train_loss, e);
-        summary_writer.add_scalar('valid/loss', valid_dice, e);
+        # summary_writer.add_scalar('train/loss', train_loss, e);
+        # summary_writer.add_scalar('valid/loss', valid_dice, e);
 
-        ckpt = {
-            'model': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'best_loss': best_dice,
-            'epoch': e+1
-        }
-        torch.save(ckpt,os.path.join('exp', EXP_NAME, 'resume.ckpt'));
+        # ckpt = {
+        #     'model': model.state_dict(),
+        #     'optimizer': optimizer.state_dict(),
+        #     'best_loss': best_dice,
+        #     'epoch': e+1
+        # }
+        # torch.save(ckpt,os.path.join('exp', EXP_NAME, 'resume.ckpt'));
         
-        save_model = False;
-        if best_dice < valid_dice:
-            save_model = True;
+        # save_model = False;
+        # if best_dice < valid_dice:
+        #     save_model = True;
         
-        if save_model:
-            print(f'new best model found: {valid_dice}')
-            best_dice = valid_dice;
-            torch.save({'model': model.state_dict(), 
-                        'best_loss': best_dice,
-                        'log': EXP_NAME}, os.path.join('exp', EXP_NAME, 'best_model.ckpt'));
+        # if save_model:
+        #     print(f'new best model found: {valid_dice}')
+        #     best_dice = valid_dice;
+        #     torch.save({'model': model.state_dict(), 
+        #                 'best_loss': best_dice,
+        #                 'log': EXP_NAME}, os.path.join('exp', EXP_NAME, 'best_model.ckpt'));
 
