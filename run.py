@@ -50,27 +50,27 @@ def train_step(epoch, model, loader, optimizer, scaler, args):
             curr_mri = mri[s*args.batch_size:(s+1)*args.batch_size]
             curr_mask = mask[s*args.batch_size:(s+1)*args.batch_size]
             curr_dt = dt[s*args.batch_size:(s+1)*args.batch_size]
-            # with torch.cuda.amp.autocast_mode.autocast():
-            #     pred = model(curr_mri);
-            #     dl = DiceLoss(sigmoid=True)(pred, curr_mask);
-            #     bl = BounraryLoss(sigmoid=True)(pred, curr_dt)*args.bl_multiplier;
-            #     loss = dl + bl;
+            with torch.cuda.amp.autocast_mode.autocast():
+                pred = model(curr_mri);
+                dl = DiceLoss(sigmoid=True)(pred, curr_mask);
+                bl = BounraryLoss(sigmoid=True)(pred, curr_dt)*args.bl_multiplier;
+                loss = dl + bl;
 
-            # scaler.scale(loss).backward();
-            # curr_loss = loss.item();
-            # curr_step+=1;
-            # curr_iou += (1-(DiceLoss(sigmoid=True)(pred, curr_mask)).item());
+            scaler.scale(loss).backward();
+            curr_loss = loss.item();
+            curr_step+=1;
+            curr_iou += (1-(DiceLoss(sigmoid=True)(pred, curr_mask)).item());
 
-            # if (curr_step) % args.virtual_batch_size == 0:
-            #     scaler.step(optimizer);
-            #     scaler.update();
+            if (curr_step) % args.virtual_batch_size == 0:
+                scaler.step(optimizer);
+                scaler.update();
                 
-            #     model.zero_grad(set_to_none = True);
-            #     epoch_loss.append(curr_loss);
-            #     epoch_IoU.append(curr_iou);
-            #     curr_loss = 0;
-            #     curr_step = 0;
-            #     curr_iou = 0;
+                model.zero_grad(set_to_none = True);
+                epoch_loss.append(curr_loss);
+                epoch_IoU.append(curr_iou);
+                curr_loss = 0;
+                curr_step = 0;
+                curr_iou = 0;
 
             pbar.set_description(('%10s' + '%10.4g'*2)%(epoch, np.mean(epoch_loss), np.mean(epoch_IoU)));
 
