@@ -475,7 +475,7 @@ def get_loader_miccai16(args):
     train_mri, test_mri = pickle.load(open(os.path.join('cache_miccai-2016', f'train_test_split.dmp'), 'rb'));
 
 
-    mri_dataset_train = MICCAI_Dataset(args, train_mri if args.use_one_sample_only is False else train_mri, train=True);
+    mri_dataset_train = MICCAI_Dataset(args, train_mri if args.use_one_sample_only is False else train_mri[:1], train=True);
     train_loader = DataLoader(mri_dataset_train, 1, True, num_workers=args.num_workers, pin_memory=True);
     mri_dataset_test = MICCAI_Dataset(args, test_mri if args.use_one_sample_only is False else test_mri[:1], train=False);
     test_loader = DataLoader(mri_dataset_test, 1, False, num_workers=args.num_workers, pin_memory=True);

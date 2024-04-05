@@ -112,12 +112,12 @@ if __name__ == "__main__":
     parser.add_argument('--crop-size-h', default=96, type=int, help='crop size for getting a patch from MRI scan');
     parser.add_argument('--crop-size-d', default=96, type=int, help='crop size for getting a patch from MRI scan');
     parser.add_argument('--learning-rate', default=1e-4, type=float);
-    parser.add_argument('--miccai16-path', default='C:/PhD/Thesis/MRIProject/SSLMRI/miccai-2016', type=str, help='path to miccai-16 dataset');
+    parser.add_argument('--miccai16-path', default='miccai-2016', type=str, help='path to miccai-16 dataset');
     parser.add_argument('--sample-per-mri', default=8, type=int, help='number of crops from the given MRI');
     parser.add_argument('--num-workers', default=0, type=int, help='num workers for data loader, should be equal to number of CPU cores');
     parser.add_argument('--use-one-sample-only', default=True, action='store_true');
     parser.add_argument('--device', default='cuda', type=str, help='device to run models on');
-    parser.add_argument('--debug-train-data', default=True, action='store_true', help='debug training data for debugging purposes');
+    parser.add_argument('--debug-train-data', default=False, action='store_true', help='debug training data for debugging purposes');
     parser.add_argument('--deterministic', default=False, action='store_true', help='if we want to have same augmentation and same datae, for sanity check');
     parser.add_argument('--bl-multiplier', default=10, type=int, help='boundary loss coefficient');
     parser.add_argument('--epoch', default=500, type=int);
@@ -144,28 +144,28 @@ if __name__ == "__main__":
     for e in range(args.epoch):
         model.train();
         train_loss = train_step(e, model, train_loader, optimizer, scale, args);
-        # model.eval();
-        # valid_dice = valid_step(args, model, test_loader, test_dataset, e);
+        model.eval();
+        valid_dice = valid_step(args, model, test_loader, test_dataset, e);
 
-        # summary_writer.add_scalar('train/loss', train_loss, e);
-        # summary_writer.add_scalar('valid/loss', valid_dice, e);
+        summary_writer.add_scalar('train/loss', train_loss, e);
+        summary_writer.add_scalar('valid/loss', valid_dice, e);
 
-        # ckpt = {
-        #     'model': model.state_dict(),
-        #     'optimizer': optimizer.state_dict(),
-        #     'best_loss': best_dice,
-        #     'epoch': e+1
-        # }
-        # torch.save(ckpt,os.path.join('exp', EXP_NAME, 'resume.ckpt'));
+        ckpt = {
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'best_loss': best_dice,
+            'epoch': e+1
+        }
+        torch.save(ckpt,os.path.join('exp', EXP_NAME, 'resume.ckpt'));
         
-        # save_model = False;
-        # if best_dice < valid_dice:
-        #     save_model = True;
+        save_model = False;
+        if best_dice < valid_dice:
+            save_model = True;
         
-        # if save_model:
-        #     print(f'new best model found: {valid_dice}')
-        #     best_dice = valid_dice;
-        #     torch.save({'model': model.state_dict(), 
-        #                 'best_loss': best_dice,
-        #                 'log': EXP_NAME}, os.path.join('exp', EXP_NAME, 'best_model.ckpt'));
+        if save_model:
+            print(f'new best model found: {valid_dice}')
+            best_dice = valid_dice;
+            torch.save({'model': model.state_dict(), 
+                        'best_loss': best_dice,
+                        'log': EXP_NAME}, os.path.join('exp', EXP_NAME, 'best_model.ckpt'));
 
