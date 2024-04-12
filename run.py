@@ -115,9 +115,11 @@ if __name__ == "__main__":
     parser.add_argument('--miccai16-path', default='miccai-2016', type=str, help='path to miccai-16 dataset');
     parser.add_argument('--sample-per-mri', default=8, type=int, help='number of crops from the given MRI');
     parser.add_argument('--num-workers', default=0, type=int, help='num workers for data loader, should be equal to number of CPU cores');
-    parser.add_argument('--use-one-sample-only', default=True, action='store_true');
+    parser.add_argument('--dataset-size', default='one', help='if "all" use all the available samples in train and test set, if "one" only used one for each set, it is used for debugging purposes');
+
+
     parser.add_argument('--device', default='cuda', type=str, help='device to run models on');
-    parser.add_argument('--debug-train-data', default=False, action='store_true', help='debug training data for debugging purposes');
+    parser.add_argument('--debug-train-data', default=True, action='store_true', help='debug training data for debugging purposes');
     parser.add_argument('--deterministic', default=False, action='store_true', help='if we want to have same augmentation and same datae, for sanity check');
     parser.add_argument('--bl-multiplier', default=10, type=int, help='boundary loss coefficient');
     parser.add_argument('--epoch', default=500, type=int);

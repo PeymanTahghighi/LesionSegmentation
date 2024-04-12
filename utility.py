@@ -116,22 +116,23 @@ def calculate_metric_percase(pred, gt, simple = False):
     else:
         return dice;
 
-def remove_small_regions(img_vol, min_size=3):
+def remove_lesions(img_vol, lesion_size_range):
     blobs, _ = nd.measurements.label(
         img_vol,
         nd.morphology.generate_binary_structure(3, 3)
     )
     labels = list(filter(bool, np.unique(blobs)))
     area = dict();
-    for idx, l in enumerate(labels):
-        t = np.where(blobs ==l, 1, 0);
-        t = np.where(t == 1);
-        x = np.max(t[0]) - np.min(t[0]);
-        y = np.max(t[1]) - np.min(t[1]);
-        z = np.max(t[2]) - np.min(t[2]);
-        area[l] = [x,y,z];
+    # for idx, l in enumerate(labels):
+    #     t = np.where(blobs ==l, 1, 0);
+    #     t = np.where(t == 1);
+    #     x = np.max(t[0]) - np.min(t[0]);
+    #     y = np.max(t[1]) - np.min(t[1]);
+    #     z = np.max(t[2]) - np.min(t[2]);
+    #     area[l] = [x,y,z];
+    min_size, max_size = lesion_size_range;
     areas = [np.count_nonzero(np.equal(blobs, lab)) for lab in labels]
-    nu_labels = [lab for lab, a in zip(labels, areas) if a <= min_size]
+    nu_labels = [lab for lab, a in zip(labels, areas) if a >= min_size and a<= max_size]
     nu_mask = reduce(
         lambda x, y: np.logical_or(x, y),
         [np.equal(blobs, lab) for lab in nu_labels]

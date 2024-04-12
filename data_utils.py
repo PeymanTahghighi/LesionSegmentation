@@ -15,7 +15,8 @@ from tqdm import tqdm
 import math
 from patchify import patchify
 from scipy.ndimage import distance_transform_edt, sobel, gaussian_filter
-from utility import remove_small_regions, calculate_metric_percase
+from utility import remove_lesions, calculate_metric_percase
+from scipy import ndimage as nd
 
 def window_center_adjustment(img):
     """window center adjustment, similar to what ITKSnap does
@@ -164,6 +165,62 @@ def cropper(mri,
 
     return ret;
 
+def get_dataset_lesion_size_dist():
+    train_mri, test_mri = pickle.load(open(os.path.join('cache_miccai-2016', f'train_test_split.dmp'), 'rb'));
+    total_areas = [];
+    for mri_path in train_mri:
+        base_path = mri_path[:mri_path.rfind('/')];
+        gt_path = base_path[:base_path.rfind('/')];
+
+        gt = nib.load(os.path.join(gt_path, 'Masks', f'Consensus.nii.gz'));
+        gt = gt.get_fdata();
+
+        blobs, _ = nd.measurements.label(
+        gt,
+        nd.morphology.generate_binary_structure(3, 3)
+        )
+
+
+        labels = list(filter(bool, np.unique(blobs)))
+        areas = [np.count_nonzero(np.equal(blobs, lab)) for lab in labels]
+        nu_labels = [a for lab, a in zip(labels, areas) if a >= 3]
+        total_areas.extend(nu_labels);
+
+
+    
+
+    for mri_path in test_mri:
+        base_path = mri_path[:mri_path.rfind('/')];
+        gt_path = base_path[:base_path.rfind('/')];
+
+        gt = nib.load(os.path.join(gt_path, 'Masks', f'Consensus.nii.gz'));
+        gt = gt.get_fdata();
+
+        blobs, _ = nd.measurements.label(
+        gt,
+        nd.morphology.generate_binary_structure(3, 3)
+        )
+
+
+        labels = list(filter(bool, np.unique(blobs)))
+        areas = [np.count_nonzero(np.equal(blobs, lab)) for lab in labels]
+        nu_labels = [a for lab, a in zip(labels, areas) if a >= 3]
+        total_areas.extend(nu_labels);
+
+
+    m = np.max(total_areas);
+    total_areas = sorted(total_areas);
+    counts, bins = np.histogram(total_areas,bins=int(np.max(total_areas)))
+    
+    ra = np.arange(3, m, 3000)
+    for r in range(0, len(ra)-1):
+        cnt = counts[ra[r]:ra[r+1]];
+        b = bins[ra[r]:ra[r+1]];
+        plt.bar(b, cnt);
+        plt.show();
+
+
+
 class MICCAI_Dataset(Dataset):
     """Dataset for self-supervised pretraining
 
@@ -189,7 +246,8 @@ class MICCAI_Dataset(Dataset):
     def __init__(self, 
                  args, 
                  patient_ids, 
-                 train = True) -> None:
+                 train = True,
+                 lesion_size_range = None) -> None:
         super().__init__();
         self.args = args;
         m1 = 0.4;
@@ -238,6 +296,7 @@ class MICCAI_Dataset(Dataset):
 
                 gt = nib.load(os.path.join(gt_path, 'Masks', f'Consensus.nii.gz'));
                 gt = gt.get_fdata();
+
                 
                 self.data.append([mri, mask, gt, patient_path]);
         
@@ -251,11 +310,15 @@ class MICCAI_Dataset(Dataset):
                 mri = mri.get_fdata();
                 mri = window_center_adjustment(mri);
 
-                mask = nib.load(os.path.join(base_path, f'T1_preprocessed_pve_2.nii.gz'));
-                mask = mask.get_fdata();
-
                 gt = nib.load(os.path.join(gt_path, 'Masks', f'Consensus.nii.gz'));
                 gt = gt.get_fdata();
+
+                mask = None;
+                
+                gt_new = remove_lesions(gt.squeeze(), lesion_size_range=lesion_size_range);
+                mask = (1-np.abs(gt.astype("int32") - gt_new.astype("int32")));
+
+                gt = gt_new;
 
                 mri = mri / (np.max(mri)+1e-4);
 
@@ -287,7 +350,7 @@ class MICCAI_Dataset(Dataset):
                 for i in range(mri_patches.shape[0]):
                     for j in range(mri_patches.shape[1]):
                         for k in range(mri_patches.shape[2]):
-                            curr_data.append((mri_patches[i,j,k,...], gt_patches[i,j,k,...], [i,j,k], patient_path))
+                            curr_data.append((mri_patches[i,j,k,...], gt_patches[i,j,k,...], mask_patches[i,j,k,...], [i,j,k], patient_path))
 
                 predicted_aggregated = np.zeros((new_w, new_h, new_d), dtype = np.int32);
                 self.pred_data[patient_path] = predicted_aggregated;
@@ -307,7 +370,7 @@ class MICCAI_Dataset(Dataset):
             mask = mask > 0;
             mri = np.expand_dims(mri, axis=0);
             mask = np.expand_dims(mask, axis=0);
-            #gt = remove_small_regions(gt.squeeze(), min_size=100000);
+            
 
             gt = np.expand_dims(gt, axis=0);
        
@@ -387,7 +450,7 @@ class MICCAI_Dataset(Dataset):
             return ret_mri, ret_gt, ret_dt;
        
         else:
-            mri, gt, loc, patient_id = self.data[index];
+            mri, gt, mask, loc, patient_id = self.data[index];
 
             mri = np.expand_dims(mri, axis=0);
             gt = np.expand_dims(gt, axis=0);
@@ -404,7 +467,7 @@ class MICCAI_Dataset(Dataset):
                     center=[mri.shape[1]//2, mri.shape[2]//2, mri.shape[3]//2]
                 visualize_2d([mri, mask, gt], center);
             
-            return mri, loc, patient_id;
+            return mri, loc, mask, patient_id;
     def update_prediction(self, 
                           pred,
                           patient_id,  
@@ -465,7 +528,7 @@ def get_loader_pretrain_miccai(args):
 
     return train_loader, test_loader; 
 
-def get_loader_miccai16(args):
+def get_loader_miccai16(args, lesion_size_range = (3, 10000000), train = True):
     """prepare train and test loader for new lesion segmentation model
 
         Parameters
@@ -475,10 +538,11 @@ def get_loader_miccai16(args):
     """
     train_mri, test_mri = pickle.load(open(os.path.join('cache_miccai-2016', f'train_test_split.dmp'), 'rb'));
 
-
-    mri_dataset_train = MICCAI_Dataset(args, train_mri if args.use_one_sample_only is False else train_mri[:1], train=True);
-    train_loader = DataLoader(mri_dataset_train, 1, True, num_workers=args.num_workers, pin_memory=True);
-    mri_dataset_test = MICCAI_Dataset(args, test_mri if args.use_one_sample_only is False else test_mri[:1], train=False);
+    train_loader = None;
+    if train is True:
+        mri_dataset_train = MICCAI_Dataset(args, train_mri if args.dataset_size == 'all' else train_mri[:1], train=True);
+        train_loader = DataLoader(mri_dataset_train, 1, True, num_workers=args.num_workers, pin_memory=True);
+    mri_dataset_test = MICCAI_Dataset(args, test_mri if args.dataset_size == 'all' else test_mri[2:3], train=False, lesion_size_range = lesion_size_range);
     test_loader = DataLoader(mri_dataset_test, 1, False, num_workers=args.num_workers, pin_memory=True);
 
     return train_loader, test_loader, mri_dataset_test; 
