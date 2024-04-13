@@ -12,6 +12,8 @@ from utility import BounraryLoss
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 import pickle
+import matplotlib.pyplot as plt
+import math
 
 
 
@@ -43,6 +45,18 @@ def valid_step(args, model, loader, dataset):
     epoch_dice = dataset.calculate_metrics();
     return epoch_dice;
 
+def visualize_results_arr():
+    results_arr = pickle.load(open('results_arr.dmp', 'rb'));
+    results_arr = [[i,a] for i,a in enumerate(results_arr) if math.isnan(a) is False];
+    ra = np.arange(3, 342826, 3000)
+    ra = [f'({ra[r]}, {ra[r+1]})' for r in range(0, len(ra)-1)];
+    indices = np.array(results_arr)[:,0].astype('int');
+    res = np.array(results_arr)[:,1]
+    ra = [r for idx,r in enumerate(ra) if idx in indices];
+
+    plt.bar(ra, res);
+    plt.show();
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='LesionSegmentation', allow_abbrev=False);
     parser.add_argument('--batch_size', default=4, type=int);
@@ -67,7 +81,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args();
     
-    #get_dataset_lesion_size_dist();
+    get_dataset_lesion_size_dist();
+    visualize_results_arr();
 
     results_arr = [];
     ra = np.arange(3, 342826, 3000) #342826 is maximum lesion size in the dataset

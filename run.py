@@ -95,10 +95,11 @@ def valid_step(args, model, loader, dataset, epoch):
     pbar = tqdm(enumerate(loader), total= len(loader), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
     with torch.no_grad():
         for idx, (batch) in pbar:
-            mri, loc, patient_id = batch[0].to(args.device), batch[1], batch[2][0]
+            mri, loc, mask, patient_id = batch[0].to(args.device), batch[1], batch[2].to(args.device), batch[3][0]
 
             pred = model(mri);      
             pred = torch.sigmoid(pred)>0.5;
+            pred = pred * mask;
             dataset.update_prediction(pred, patient_id,loc);
     
     epoch_dice = dataset.calculate_metrics();
@@ -119,7 +120,7 @@ if __name__ == "__main__":
 
 
     parser.add_argument('--device', default='cuda', type=str, help='device to run models on');
-    parser.add_argument('--debug-train-data', default=True, action='store_true', help='debug training data for debugging purposes');
+    parser.add_argument('--debug-train-data', default=False, action='store_true', help='debug training data for debugging purposes');
     parser.add_argument('--deterministic', default=False, action='store_true', help='if we want to have same augmentation and same datae, for sanity check');
     parser.add_argument('--bl-multiplier', default=10, type=int, help='boundary loss coefficient');
     parser.add_argument('--epoch', default=500, type=int);
@@ -129,7 +130,7 @@ if __name__ == "__main__":
     args = parser.parse_args();
 
     #run only once to cache location of train and test mri
-    cache_dataset_miccai16(args);
+    #cache_dataset_miccai16(args);
     
     train_loader, test_loader, test_dataset = get_loader_miccai16(args);
 
