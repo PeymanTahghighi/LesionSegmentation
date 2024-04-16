@@ -408,7 +408,7 @@ class MICCAI_Dataset(Dataset):
 
                 num_synt_lesions = np.random.randint(1,5) if self.args.deterministic is False else 3;
                 for _ in range(num_synt_lesions):
-                    mri_c, heatmap = add_synthetic_lesion_wm(mri_c, mask_c, self.args.deterministic)
+                    mri_c, heatmap = add_synthetic_lesion_wm(mri_c, mask_c, self.args)
                     total_heatmap = torch.clamp(heatmap+total_heatmap, 0, 1);
 
                 total_heatmap_thresh = torch.where(total_heatmap > 0.5, 1.0, 0.0);
@@ -564,7 +564,7 @@ def visualize_2d(images, slice,):
 
 def add_synthetic_lesion_wm(img, 
                             mask_g, 
-                            deterministic):
+                            args):
     """adds synthetic lesions to the MRI scan
 
         Parameters
@@ -583,9 +583,9 @@ def add_synthetic_lesion_wm(img,
     _,h,w,d = mri.shape;
 
     mask_cpy = deepcopy(mask_g);
-    size_x = np.random.randint(10,20) if deterministic is False else 3;
-    size_y = np.random.randint(10,20) if deterministic is False else 3;
-    size_z = np.random.randint(10,20) if deterministic is False else 3;
+    size_x = np.random.randint(10,20) if args.deterministic is False else 3;
+    size_y = np.random.randint(10,20) if args.deterministic is False else 3;
+    size_z = np.random.randint(10,20) if args.deterministic is False else 3;
     mask_cpy[:,:,:,d-size_z:] = 0;
     mask_cpy[:,:,:,:size_z+1] = 0;
     mask_cpy[:,:,w-size_y:,:] = 0;
@@ -594,7 +594,7 @@ def add_synthetic_lesion_wm(img,
     mask_cpy[:,:size_x+1,:,:] = 0;
     pos_cords = np.where(mask_cpy==1);
 
-    if deterministic is False:
+    if args.deterministic is False:
         if len(pos_cords[0]) != 0:
             r = np.random.randint(0,len(pos_cords[0]));
             center = [pos_cords[1][r], pos_cords[2][r],pos_cords[3][r]]
@@ -610,15 +610,15 @@ def add_synthetic_lesion_wm(img,
     #shape
     cube = torch.zeros((1,h,w,d), dtype=torch.float32);
     cube[:,max(center[0]-size_x,0):min(center[0]+size_x, h), max(center[1]-size_y,0):min(center[1]+size_y,w), max(center[2]-size_z,0):min(center[2]+size_z,d)] = 1;
-    cube_texture = torch.randn(cube.shape)*0.05 + 0.95;
+    cube_texture = torch.randn(cube.shape)*args.cube_texture_variance + args.cube_texture_mean;
     cube_texture = GaussianSmooth(2, approx='erf')(cube_texture);
     
 
-    cube = v2.ElasticTransform(alpha=500)(cube);
-    cube = v2.ElasticTransform(alpha=500)(cube.transpose(1,2)).transpose(1,2);
-    cube = v2.ElasticTransform(alpha=500)(cube.transpose(1,3)).transpose(1,3);
+    cube = v2.ElasticTransform(alpha=args.elastic_deform_alpha)(cube);
+    cube = v2.ElasticTransform(alpha=args.elastic_deform_alpha)(cube.transpose(1,2)).transpose(1,2);
+    cube = v2.ElasticTransform(alpha=args.elastic_deform_alpha)(cube.transpose(1,3)).transpose(1,3);
     cube = cube * mask_g;
-    cube = remove_lesions(cube.int().squeeze(), lesion_size_range=(3, 12000))
+    cube = remove_lesions(cube.int().squeeze(), lesion_size_range=(args.lesion_size_min, args.lesion_size_max))
     cube = GaussianSmooth(np.random.uniform(1.5,3), approx='erf')(cube);
     
     #================

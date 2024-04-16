@@ -76,6 +76,29 @@ def train_step(epoch, model, loader, optimizer, scaler, args):
 
     return np.mean(epoch_loss);
 
+def log_hyperparameters(args):
+    print('\n\n*********Hyperparameters*********\n');
+    print(f'batch-size: {args.batch_size}');
+    print(f'crop-size: ({args.crop_size_w}, {args.crop_size_h} , {args.crop_size_d})');
+    print(f'learning-rate: {args.learning_rate}');
+    print(f'sample-per-mri: {args.sample_per_mri}');
+    print(f'bl-multiplier: {args.bl_multiplier}');
+    print(f'epoch: {args.epoch}');
+    print(f'network: {args.network}');
+    print(f'resume: {args.resume}');
+    print(f'elastic-deform-alpha: {args.elastic_deform_alpha}');
+    print(f'cube-texture-mean: {args.cube_texture_mean}');
+    print(f'cube-texture-variance: {args.cube_texture_variance}');
+    print(f'lesion-size-min: {args.lesion_size_min}');
+    print(f'lesion-size-max: {args.lesion_size_max}');
+
+    #find a path for summary writer
+    tot_exp = len(os.listdir('exp'));
+    path_to_sum_wr = os.path.join('exp', f'Experiment-{tot_exp+1}');
+    print(f'\nsave to => {path_to_sum_wr}');
+    print('*********\n');
+    return path_to_sum_wr;
+
 
 def valid_step(args, model, loader, dataset, epoch):
     """one epoch of validating new lesion segmentation model
@@ -126,6 +149,13 @@ if __name__ == "__main__":
     parser.add_argument('--epoch', default=500, type=int);
     parser.add_argument('--virtual-batch-size', default=1, type=int, help='use it if batch size does not fit GPU memory');
     parser.add_argument('--network', default='VNet', type=str, help='which model to use');
+    parser.add_argument('--resume', action='store_true', default=True, help='whether to resume training or start from beginning');
+    parser.add_argument('--resume-path', default='Experiment-6', help='path to checkpoint to resume');
+    parser.add_argument('--elastic-deform-alpha', default=500, type=float, help='magnitude of elastic deformation');
+    parser.add_argument('--cube-texture-mean', default=0.95, type=float, help='cube texture mean value');
+    parser.add_argument('--cube-texture-variance', default=0.05, type=float, help='cube texture variance');
+    parser.add_argument('--lesion-size-min', default=3, type=float, help='minimum lesion size to include in the augmentation process');
+    parser.add_argument('--lesion-size-max', default=12000, type=float, help='maximum lesion size to include in the augmentation process');
 
     args = parser.parse_args();
 
@@ -136,15 +166,24 @@ if __name__ == "__main__":
 
     if args.network == 'VNet':
         model = VNet().to(args.device);
-        EXP_NAME = f"Net={args.network}-baseline";
     
     optimizer = torch.optim.AdamW(model.parameters(), lr = args.learning_rate);
     scale = torch.cuda.amp.grad_scaler.GradScaler();
     
-    print(EXP_NAME);
-    summary_writer = SummaryWriter(os.path.join('exp', EXP_NAME));
+    path_to_sum_wr = log_hyperparameters(args);
+
     best_dice = 0;
-    for e in range(args.epoch):
+    start_epoch = 0;
+    if args.resume is True:
+        ckpt = torch.load(os.path.join('exp', args.resume_path, 'resume.ckpt'), map_location=args.device);
+        model.load_state_dict(ckpt['model'])
+        optimizer.load_state_dict(ckpt['optimizer']);
+        best_dice = ckpt['best_loss'];
+        start_epoch = ckpt['epoch'];
+        print(f'resuming training from epoch: {start_epoch} with best dice: {best_dice}');
+
+    summary_writer = SummaryWriter(path_to_sum_wr);
+    for e in range(start_epoch, args.epoch):
         model.train();
         train_loss = train_step(e, model, train_loader, optimizer, scale, args);
         model.eval();
@@ -156,10 +195,11 @@ if __name__ == "__main__":
         ckpt = {
             'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
+            'scale': scale.state_dict(),
             'best_loss': best_dice,
             'epoch': e+1
         }
-        torch.save(ckpt,os.path.join('exp', EXP_NAME, 'resume.ckpt'));
+        torch.save(ckpt, os.path.join(path_to_sum_wr, 'resume.ckpt'));
         
         save_model = False;
         if best_dice < valid_dice:
@@ -170,5 +210,5 @@ if __name__ == "__main__":
             best_dice = valid_dice;
             torch.save({'model': model.state_dict(), 
                         'best_loss': best_dice,
-                        'log': EXP_NAME}, os.path.join('exp', EXP_NAME, 'best_model.ckpt'));
+                        'log': path_to_sum_wr}, os.path.join(path_to_sum_wr, 'best_model.ckpt'));
 
