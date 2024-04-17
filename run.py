@@ -149,9 +149,9 @@ if __name__ == "__main__":
     parser.add_argument('--epoch', default=500, type=int);
     parser.add_argument('--virtual-batch-size', default=1, type=int, help='use it if batch size does not fit GPU memory');
     parser.add_argument('--network', default='VNet', type=str, help='which model to use');
-    parser.add_argument('--resume', action='store_true', default=True, help='whether to resume training or start from beginning');
+    parser.add_argument('--resume', action='store_true', default=False, help='whether to resume training or start from beginning');
     parser.add_argument('--resume-path', default='Experiment-6', help='path to checkpoint to resume');
-    parser.add_argument('--elastic-deform-alpha', default=500, type=float, help='magnitude of elastic deformation');
+    parser.add_argument('--elastic-deform-alpha', default=500.0, type=float, help='magnitude of elastic deformation');
     parser.add_argument('--cube-texture-mean', default=0.95, type=float, help='cube texture mean value');
     parser.add_argument('--cube-texture-variance', default=0.05, type=float, help='cube texture variance');
     parser.add_argument('--lesion-size-min', default=3, type=float, help='minimum lesion size to include in the augmentation process');
