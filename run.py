@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
 
     parser.add_argument('--device', default='cuda', type=str, help='device to run models on');
-    parser.add_argument('--debug-train-data', default=False, action='store_true', help='debug training data for debugging purposes');
+    parser.add_argument('--debug-train-data', default=True, action='store_true', help='debug training data for debugging purposes');
     parser.add_argument('--deterministic', default=False, action='store_true', help='if we want to have same augmentation and same datae, for sanity check');
     parser.add_argument('--bl-multiplier', default=10, type=int, help='boundary loss coefficient');
     parser.add_argument('--epoch', default=500, type=int);

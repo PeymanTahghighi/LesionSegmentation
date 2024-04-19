@@ -81,28 +81,28 @@ if __name__ == "__main__":
 
     args = parser.parse_args();
     
-    get_dataset_lesion_size_dist();
-    visualize_results_arr();
+    #get_dataset_lesion_size_dist();
+    #visualize_results_arr();
 
     results_arr = [];
     ra = np.arange(3, 342826, 3000) #342826 is maximum lesion size in the dataset
     for r in range(0, len(ra)-1):
         train_loader, test_loader, test_dataset = get_loader_miccai16(args, train=False, lesion_size_range=(ra[r],ra[r+1]));
 
-
-        if args.network == 'VNet':
-            model = VNet().to(args.device);
-            EXP_NAME = f"Net={args.network}-baseline";
+        if (test_dataset.total_lesions_size) > 0:
+            if args.network == 'VNet':
+                model = VNet().to(args.device);
+                EXP_NAME = f"Net={args.network}-baseline";
+            
+            #load model
+            ckpt = torch.load(args.model_path, map_location=args.device);
+            model.load_state_dict(ckpt['model']);
+            
         
-        #load model
-        ckpt = torch.load(args.model_path, map_location=args.device);
-        model.load_state_dict(ckpt['model']);
-        
-    
-        model.eval();
-        valid_dice = valid_step(args, model, test_loader, test_dataset);
-        print(f'results for ({ra[r], ra[r+1]}): {valid_dice}');
-        results_arr.append(valid_dice);
+            model.eval();
+            valid_dice = valid_step(args, model, test_loader, test_dataset);
+            print(f'results for ({ra[r], ra[r+1]}): {valid_dice}');
+            results_arr.append(valid_dice);
 
 pickle.dump(results_arr, open('results_arr.dmp', 'wb'));
 

@@ -274,8 +274,8 @@ class MICCAI_Dataset(Dataset):
                 keys=['mri', 'mask', 'gt'], 
                 label_key='gt', 
                 spatial_size= (args.crop_size_w, args.crop_size_h, args.crop_size_d),
-                pos=1, 
-                neg=0,
+                pos=0, 
+                neg=1,
                 num_samples=args.sample_per_mri if train else 1,)
             ]
         )
@@ -303,6 +303,7 @@ class MICCAI_Dataset(Dataset):
                 self.data.append([mri, mask, gt, patient_path]);
         
         else:
+            self.total_lesions_size = 0;
             self.pred_data = dict();
             self.gt_data = dict();
             for patient_path in patient_ids:
@@ -321,6 +322,8 @@ class MICCAI_Dataset(Dataset):
                 mask = (1-np.abs(gt.astype("int32") - gt_new.astype("int32")));
 
                 gt = gt_new;
+
+                self.total_lesions_size += np.count_nonzero(gt);
 
                 mri = mri / (np.max(mri)+1e-4);
 
@@ -376,7 +379,10 @@ class MICCAI_Dataset(Dataset):
 
             gt = np.expand_dims(gt, axis=0);
        
-            mri = mri / (np.max(mri)+1e-4);            
+            mri = mri / (np.max(mri)+1e-4);
+
+           # mri = inpaint_lesions(mri, gt);
+                        
 
             if self.args.deterministic is False:
                 # if np.sum(gt) != 0:
@@ -412,7 +418,7 @@ class MICCAI_Dataset(Dataset):
                     total_heatmap = torch.clamp(heatmap+total_heatmap, 0, 1);
 
                 total_heatmap_thresh = torch.where(total_heatmap > 0.5, 1.0, 0.0);
-                total_heatmap_thresh = torch.clamp(total_heatmap_thresh + gt_c, 0, 1);
+                total_heatmap_thresh = torch.clamp(gt_c, 0, 1);
 
                 pos_dt = distance_transform_edt(np.where(total_heatmap_thresh.squeeze().numpy()==1, 0, 1));
                 pos_dt = pos_dt/(np.max(pos_dt)+1e-4);
@@ -627,3 +633,10 @@ def add_synthetic_lesion_wm(img,
     mri_after = (1-cube)*mri + final;
     
     return mri_after, cube;
+
+
+def inpaint_lesions(mri, gt):
+    gt = GaussianSmooth(2, approx='erf')(gt);
+    noise = GaussianSmooth(30)(mri);
+    mri_after = (1-gt)*mri + (gt*noise);
+    return mri_after;
