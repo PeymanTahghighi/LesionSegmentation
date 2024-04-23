@@ -46,7 +46,7 @@ def valid_step(args, model, loader, dataset):
     return epoch_dice;
 
 def visualize_results_arr():
-    results_arr = pickle.load(open('results_arr.dmp', 'rb'));
+    results_arr = pickle.load(open('results_arr-baseline.dmp', 'rb'));
     results_arr = [[i,a] for i,a in enumerate(results_arr) if math.isnan(a) is False];
     ra = np.arange(3, 342826, 3000)
     ra = [f'({ra[r]}, {ra[r+1]})' for r in range(0, len(ra)-1)];
@@ -54,10 +54,31 @@ def visualize_results_arr():
     res = np.array(results_arr)[:,1]
     ra = [r for idx,r in enumerate(ra) if idx in indices];
 
+    results_arr = [];
+    for i in range(len(res)):
+       results_arr.append([ra[i],res[i]]); 
+    pickle.dump(results_arr, open('results_baseline.dmp', 'wb'))
+
     plt.bar(ra, res);
     plt.show();
 
+def parse_results_file(file_name):
+    with open(file_name, 'r',  encoding="utf8") as f:
+        lines = f.readlines();
+    ids = [i for i in range(len(lines)) if 'results' in lines[i]]
+    results_arr = [];
+    ra = pickle.load(open('results_baseline.dmp', 'rb'));
+    for i in range(len(ids)):
+        results_arr.append([ra[i][0], float(lines[ids[i]][lines[ids[i]].rfind(':')+1:].rstrip())]);
+    pickle.dump(results_arr, open(f'results_arr_{file_name}.dmp', 'wb'));
+
+
+
 if __name__ == "__main__":
+
+    # file_list = glob('*.out');
+    # for f in file_list:
+    #     parse_results_file(f);
     parser = argparse.ArgumentParser(description='LesionSegmentation', allow_abbrev=False);
     parser.add_argument('--batch_size', default=4, type=int);
     parser.add_argument('--crop-size-w', default=96, type=int, help='crop size for getting a patch from MRI scan');
@@ -82,7 +103,7 @@ if __name__ == "__main__":
     args = parser.parse_args();
     
     #get_dataset_lesion_size_dist();
-    #visualize_results_arr();
+   # visualize_results_arr();
 
     results_arr = [];
     ra = np.arange(3, 342826, 3000) #342826 is maximum lesion size in the dataset
@@ -95,15 +116,15 @@ if __name__ == "__main__":
                 EXP_NAME = f"Net={args.network}-baseline";
             
             #load model
-            ckpt = torch.load(args.model_path, map_location=args.device);
+            ckpt = torch.load(os.path.join(args.model_path, 'best_model.ckpt'), map_location=args.device);
             model.load_state_dict(ckpt['model']);
             
         
             model.eval();
             valid_dice = valid_step(args, model, test_loader, test_dataset);
             print(f'results for ({ra[r], ra[r+1]}): {valid_dice}');
-            results_arr.append(valid_dice);
+            results_arr.append([f'({ra[r], ra[r+1]})',valid_dice]);
 
-pickle.dump(results_arr, open('results_arr.dmp', 'wb'));
+pickle.dump(results_arr, open(f'results_arr_{os.path.basename(args.model_path)}.dmp', 'wb'));
 
 

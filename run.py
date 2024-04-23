@@ -172,6 +172,8 @@ if __name__ == "__main__":
     
     path_to_sum_wr = log_hyperparameters(args);
 
+    local_rank = os.environ['LOCAL_RANK'];
+
     best_dice = 0;
     start_epoch = 0;
     if args.resume is True:
